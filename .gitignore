@@ -6,3 +6,4 @@ ws/.catkin_workspace
 ws/maps/
 __pycache__/
 *.pyc
+.llm.env

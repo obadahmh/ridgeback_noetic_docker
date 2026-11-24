@@ -1,509 +1,244 @@
 # Ridgeback Noetic Docker
 
-This container is for talking from this Ubuntu 24.04 workstation to a Ridgeback running Ubuntu 20.04 and ROS Noetic.
+A ROS Noetic container for working with a Clearpath Ridgeback from a newer Ubuntu machine (tested on 24.04). It covers driving, mapping, localization, slow navigation, diagnostics, and a Gazebo simulator.
 
-The container uses host networking because ROS 1 nodes advertise their own host address. It is configured for:
+Every script in `scripts/` runs inside the container, so nothing ROS-related has to be installed on the host.
 
-- Robot ROS master: `http://192.168.131.1:11311`
-- Workstation wired IP: `192.168.131.100`
-- Robot hostname mapping: `cpr-r100-0601 -> 192.168.131.1`
+## Setup
 
-These values can be changed in `.env`. Start from:
-
-```bash
-cp .env.example .env
-```
-
-For Ethernet:
-
-```bash
-./scripts/use-ethernet
-```
-
-For wireless, pass the robot Wi-Fi IP and offboard Wi-Fi IP:
-
-```bash
-./scripts/use-wireless ROBOT_WIFI_IP OFFBOARD_WIFI_IP
-```
-
-Example:
-
-```bash
-./scripts/use-wireless 10.180.68.123 10.180.68.46
-```
-
-## Install Docker
-
-Docker is not installed on this machine yet. Run:
+Install Docker:
 
 ```bash
 sudo apt update
 sudo apt install docker.io docker-compose-v2
 sudo usermod -aG docker "$USER"
-newgrp docker
 ```
 
-If `newgrp docker` does not update the current terminal cleanly, log out and back in.
+Log out and back in so the group change applies.
 
-## Build
+Clone with the submodule:
 
 ```bash
-cd ~/ridgeback_noetic_docker
+git clone --recursive https://github.com/obadahmh/ridgeback_noetic_docker.git
+cd ridgeback_noetic_docker
+```
+
+Set the network addresses:
+
+```bash
+cp .env.example .env
+```
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `ROBOT_IP` | `192.168.131.1` | Robot address. The ROS master runs here. |
+| `OFFBOARD_IP` | `192.168.131.100` | This computer's address on the robot network. |
+| `ROBOT_HOSTNAME` | `cpr-r100-0601` | Robot hostname, mapped to `ROBOT_IP` in the container. |
+
+Or use the helpers:
+
+```bash
+./scripts/use-ethernet
+./scripts/use-wireless ROBOT_WIFI_IP OFFBOARD_WIFI_IP
+```
+
+Build the image and the workspace:
+
+```bash
 ./scripts/build
+./scripts/build-ws
 ```
 
-## Check The Robot
+The container uses host networking. ROS 1 nodes advertise their own address, so both machines must be able to reach each other at the IPs above.
+
+## Check the connection
 
 ```bash
-cd ~/ridgeback_noetic_docker
 ./scripts/test-robot
 ```
 
-You should see ROS 1 topics from the Ridgeback. Useful manual checks inside `./scripts/shell`:
+This should list the robot's topics. For a shell inside the container, run `./scripts/shell`.
+
+## Drive
+
+Make sure the area is clear, or the wheels are off the ground.
 
 ```bash
-rostopic list
-rostopic echo /odom
-rostopic echo /diagnostics
-rosnode list
-```
-
-## Drive With Keyboard
-
-Make sure the Ridgeback is enabled and safely lifted or in a clear area before publishing velocity commands.
-
-```bash
-cd ~/ridgeback_noetic_docker
 ./scripts/teleop
 ```
 
-## Drive With Text Commands
+### Text commands
 
-The text-command executor is a small safety layer for future LLM control. It accepts only a tiny command language, checks hard limits, uses odometry to stop each motion, and publishes zero velocity before and after every command.
-
-First test commands without publishing to the robot:
+`text-control` takes short, fixed commands and checks them against hard limits. It uses odometry to end each move and sends zero velocity before and after.
 
 ```bash
-cd ~/ridgeback_noetic_docker
-./scripts/text-control --dry-run "forward 0.5m"
-./scripts/text-control --dry-run "turn left 45deg"
-./scripts/text-control --dry-run "forward 5m"
+./scripts/text-control --dry-run "forward 0.5m"   # check only, nothing sent
+./scripts/text-control "forward 0.25m"            # one command
+./scripts/text-control                            # interactive
 ```
 
-Then run the interactive executor in a clear area:
+Commands: `status`, `stop`, `forward 0.5m`, `back 20cm`, `turn left 45deg`, `turn right 90deg`, `quit`.
 
-```bash
-cd ~/ridgeback_noetic_docker
-./scripts/text-control
-```
+Limits: 1.0 m per move, 90° per turn, 0.12 m/s, 0.35 rad/s.
 
-During a motion command, use `Ctrl-C`, the Ridgeback run-stop, or the physical E-stop if anything looks wrong. The `stop` command is useful between commands; motion commands are intentionally short and bounded.
-
-Accepted commands:
-
-```bash
-status
-stop
-forward 0.5m
-back 20cm
-turn left 45deg
-turn right 90deg
-quit
-```
-
-Default safety limits are conservative: 1.0 m maximum translation, 90 deg maximum turn, 0.12 m/s linear speed, and 0.35 rad/s angular speed. You can make a single one-shot command too:
-
-```bash
-./scripts/text-control "forward 0.25m"
-```
-
-Structured JSON commands are also supported. This is the interface the LLM bridge uses:
+It also takes JSON:
 
 ```bash
 ./scripts/text-control --dry-run --json '{"action":"move","direction":"forward","distance_m":0.25}'
 ./scripts/text-control --dry-run --json '{"action":"turn","direction":"left","angle_deg":30}'
-./scripts/text-control --dry-run --json '{"action":"stop"}'
 ```
 
-Allowed JSON actions are `move`, `turn`, `stop`, and `status`. Unsupported fields are rejected.
+Allowed actions are `move`, `turn`, `stop`, and `status`. Any other field is rejected.
 
-## Drive With K2-Think
+To stop: `Ctrl-C`, the run-stop, or the E-stop.
 
-The LLM bridge asks K2-Think to translate natural language into one JSON command, then sends that JSON through the same safety validator used by `text-control`. The LLM never publishes directly to `/cmd_vel`.
+### LLM commands
 
-Configure an OpenAI-compatible K2-Think endpoint:
+`llm-control` sends a plain-English request to an OpenAI-compatible endpoint (set up for K2-Think) and gets back one JSON command. That command goes through the same checks as `text-control`. The LLM never publishes to `/cmd_vel` directly.
 
 ```bash
 export K2_THINK_BASE_URL=http://localhost:8000/v1
 export K2_THINK_MODEL=LLM360/K2-Think-V2
 export K2_THINK_API_KEY=your_key_if_needed
-```
 
-Use dry-run first:
-
-```bash
-cd ~/ridgeback_noetic_docker
 ./scripts/llm-control --dry-run "move forward a quarter meter"
-./scripts/llm-control --dry-run "turn left thirty degrees"
-./scripts/llm-control --dry-run "go explore the lab"
-```
-
-The bridge should print the LLM JSON and whether it was accepted:
-
-```text
-K2 JSON: {"action": "move", "direction": "forward", "distance_m": 0.25}
-Accepted: move forward 0.25 m
-Dry run only. Nothing published.
-```
-
-When dry-run behavior is boring and predictable, run live in a clear area:
-
-```bash
 ./scripts/llm-control "move forward a quarter meter"
 ```
 
-The same default safety limits apply: 1.0 m maximum translation, 90 deg maximum turn, slow speeds, fresh odometry required, and zero velocity before/after each command.
+You can keep these exports in `.llm.env`. Git ignores that file.
 
-## Mapping First
+## Simulator
 
-For autonomous navigation, start by building a 2D occupancy-grid map of the environment. The usual ROS 1 flow is:
-
-1. Verify laser, odometry, and TF.
-2. Run SLAM while slowly teleoping the robot around the environment.
-3. Save the map.
-4. Use the saved map with AMCL localization and `move_base`.
-
-Rebuild after navigation packages are added:
+This uses Clearpath's ROS 1 Ridgeback Gazebo simulator. It runs a local ROS master and ignores `.env`.
 
 ```bash
-cd ~/ridgeback_noetic_docker
-./scripts/build
+./scripts/sim-ridgeback          # terminal 1: Gazebo (default config: base_sick)
+./scripts/sim-rviz               # terminal 2: RViz
+./scripts/sim-teleop             # terminal 3: keyboard driving
 ```
 
-Check that the robot has the topics and transforms needed for mapping:
+SLAM in simulation, with Gazebo still running:
 
 ```bash
-cd ~/ridgeback_noetic_docker
+./scripts/sim-slam
+./scripts/sim-save-map sim_lab
+```
+
+If Gazebo or RViz fails to render, put `LIBGL_ALWAYS_SOFTWARE=1` in front of the command.
+
+## Mapping
+
+The order is: check sensors, run SLAM while driving slowly, save the map, then localize on it.
+
+Check that laser, odometry, and TF are there:
+
+```bash
 ./scripts/check-nav-prereqs
+./scripts/slam-smoke-test       # starts gmapping without driving
+./scripts/rviz-laser            # should show red laser points
 ```
 
-Confirm gmapping can start and publish a map without driving:
+If `rviz-laser` is empty, fix the laser or display first. SLAM won't work without it.
+
+Run SLAM:
 
 ```bash
-cd ~/ridgeback_noetic_docker
-./scripts/slam-smoke-test
+./scripts/stop-navigation       # clear any old nodes
+./scripts/slam                  # terminal 1: gmapping + RViz
+./scripts/teleop                # terminal 2: drive slowly
 ```
 
-## Clearpath Ridgeback Mapping Baseline
-
-Clearpath's Ridgeback navigation guide for ROS 1 says to run `ridgeback_navigation gmapping_demo.launch` and view it with `ridgeback_viz view_robot.launch config:=gmapping`. The Docker image already includes `ridgeback_viz`, and this workspace includes `ridgeback_navigation` from the Ridgeback source repo because the navigation package was not available from the configured apt repositories.
-
-Build the workspace after cloning or changing ROS packages:
+Drive slow loops. Avoid fast spins, wheel slip, and long corridors with no loop back. Save before stopping `slam`:
 
 ```bash
-cd ~/ridgeback_noetic_docker
-./scripts/build-ws
-```
-
-Stop any previous mapping/navigation nodes:
-
-```bash
-cd ~/ridgeback_noetic_docker
-./scripts/stop-navigation
-```
-
-For the closest cautious first pass, run Clearpath's gmapping include without `move_base`:
-
-Terminal 1:
-
-```bash
-cd ~/ridgeback_noetic_docker
-./scripts/clearpath-gmapping
-```
-
-Terminal 2:
-
-```bash
-cd ~/ridgeback_noetic_docker
-./scripts/clearpath-rviz-gmapping
-```
-
-Terminal 3:
-
-```bash
-cd ~/ridgeback_noetic_docker
-./scripts/teleop
-```
-
-To run Clearpath's full tutorial launch exactly, use this instead of `./scripts/clearpath-gmapping`:
-
-```bash
-cd ~/ridgeback_noetic_docker
-./scripts/clearpath-gmapping-demo
-```
-
-That full demo also starts `move_base`, matching Clearpath's tutorial.
-
-Before starting SLAM, verify RViz can see the laser by itself:
-
-```bash
-cd ~/ridgeback_noetic_docker
-./scripts/rviz-laser
-```
-
-You should see red laser points. This view uses `front_laser` as the fixed frame, so it is the simplest RViz test. If this is blank, debug RViz/display/laser before debugging SLAM.
-
-The red laser points are not the map. They are recent sensor readings and they fade. The persistent map is the `/map` occupancy grid from gmapping. The default mapping scripts use Clearpath's `ridgeback_viz/rviz/gmapping.rviz` view.
-
-Simple two-terminal SLAM session:
-
-Terminal 1, start gmapping and RViz together:
-
-```bash
-cd ~/ridgeback_noetic_docker
-./scripts/slam
-```
-
-Terminal 2, drive slowly:
-
-```bash
-cd ~/ridgeback_noetic_docker
-./scripts/teleop
-```
-
-Save the map while `./scripts/slam` is still running:
-
-```bash
-cd ~/ridgeback_noetic_docker
 ./scripts/save-map first_floor
 ```
 
-To inspect whether `/map` contains normal occupancy values while SLAM is running:
+This writes `ws/maps/first_floor.yaml` and `ws/maps/first_floor.pgm`.
+
+Other mapping tools:
+
+| Script | Does |
+|---|---|
+| `clearpath-gmapping` + `clearpath-rviz-gmapping` | Clearpath's gmapping without `move_base` |
+| `clearpath-gmapping-demo` | Clearpath's full tutorial launch, including `move_base` |
+| `mapping` + `rviz-mapping` | gmapping and RViz in separate terminals |
+| `map-stats` | Shows the cell counts in `/map` |
+| `view-map maps/X.yaml` | Opens a saved map in RViz |
+| `open-map-image maps/X.yaml` | Opens the raw map image |
+
+`ridgeback_navigation` is built from source (`ws/src/ridgeback`) because apt doesn't have it.
+
+## Localization
 
 ```bash
-cd ~/ridgeback_noetic_docker
-./scripts/map-stats
-```
-
-Alternative three-terminal flow:
-
-```bash
-./scripts/mapping
-./scripts/rviz-mapping
-./scripts/teleop
-```
-
-It is normal for `./scripts/rviz-mapping` to look empty until `./scripts/mapping` is running and publishing `/map`. For a live power view, open an optional terminal and run `./scripts/watch-power`.
-
-Drive slow loops around the space. Avoid fast spins, wheel slip, bumping objects, and long featureless corridors without loop closures. When the map looks good, stop the robot with `k`, save while gmapping is still running, then stop gmapping with `Ctrl-C`:
-
-```bash
-cd ~/ridgeback_noetic_docker
-./scripts/save-map first_floor
-```
-
-This creates:
-
-```bash
-~/ridgeback_noetic_docker/ws/maps/first_floor.yaml
-~/ridgeback_noetic_docker/ws/maps/first_floor.pgm
-```
-
-To view a saved map later:
-
-```bash
-cd ~/ridgeback_noetic_docker
-./scripts/view-map maps/first_floor.yaml
-```
-
-To inspect the raw saved map image without RViz coloring:
-
-```bash
-cd ~/ridgeback_noetic_docker
-./scripts/open-map-image maps/first_floor.yaml
-```
-
-## Localize On A Saved Map
-
-After saving a map, run AMCL localization before attempting autonomous navigation. Start with AMCL only:
-
-Terminal 1:
-
-```bash
-cd ~/ridgeback_noetic_docker
 ./scripts/stop-navigation
-./scripts/localize maps/lab_floor.yaml
+./scripts/localize maps/lab_floor.yaml   # terminal 1: AMCL only
+./scripts/rviz-localization              # terminal 2
+./scripts/teleop                         # terminal 3
 ```
 
-Terminal 2:
+In RViz, use **2D Pose Estimate** to set where the robot is and which way it faces. If the laser stays lined up with the map while you drive, localization works.
+
+`localize-demo` runs Clearpath's full demo, which also starts `move_base`.
+
+## Navigation
+
+Only do this once localization is reliable. `navigate-slow` uses Clearpath's costmaps with a slower planner, lower speed limits, and no recovery spins.
 
 ```bash
-cd ~/ridgeback_noetic_docker
-./scripts/rviz-localization
-```
-
-In RViz, click `2D Pose Estimate`, then click and drag on the map where the robot actually is and which way it is facing. The laser scan should line up with the map. Then drive slowly with teleop in a third terminal:
-
-```bash
-cd ~/ridgeback_noetic_docker
-./scripts/teleop
-```
-
-If the scan stays aligned with the map while you move, localization is working.
-
-To run Clearpath's full localization/navigation demo, use this instead of `./scripts/localize`:
-
-```bash
-cd ~/ridgeback_noetic_docker
-./scripts/localize-demo maps/lab_floor.yaml
-```
-
-That also starts `move_base`, so use it only after AMCL-only localization looks good.
-
-## Slow Click-To-Go Navigation
-
-After AMCL localization stays aligned while driving, try a cautious `move_base` goal. This uses Clearpath's costmaps with a slower DWA local planner, lower velocity and acceleration limits, and recovery spins disabled.
-
-Terminal 1:
-
-```bash
-cd ~/ridgeback_noetic_docker
 ./scripts/stop-navigation
-./scripts/navigate-slow maps/lab_floor.yaml
+./scripts/navigate-slow maps/lab_floor.yaml   # terminal 1
+./scripts/rviz-localization                   # terminal 2
+./scripts/cancel-nav                          # terminal 3: ready to abort
 ```
 
-Terminal 2:
+In RViz, set the pose first, then use **2D Nav Goal** to pick a spot 0.5 to 1 m away in open space. Stay near the E-stop.
 
-```bash
-cd ~/ridgeback_noetic_docker
-./scripts/rviz-localization
-```
+To abort: `cancel-nav`, `stop-navigation`, `Ctrl-C`, or the E-stop.
 
-Terminal 3, keep this ready as an abort command:
+## Diagnostics
 
-```bash
-cd ~/ridgeback_noetic_docker
-./scripts/cancel-nav
-```
+Use these if the robot faults or shuts down, for example when it can rotate but not translate. Common causes are battery sag, motor controller faults, overload, or E-stop changes.
 
-In RViz:
+| Script | Does |
+|---|---|
+| `diagnose` | One-time snapshot |
+| `record-diagnostics 60` | Records a bag for 60 s. Reproduce the fault during it. Saved to `ws/logs/` |
+| `monitor-diagnostics` | Live diagnostics view |
+| `watch-power` | Live battery and current view |
 
-1. Use `2D Pose Estimate` first and confirm the laser scan lines up with the map.
-2. Click `2D Nav Goal`.
-3. Pick a very nearby goal, around 0.5 m to 1.0 m away, in open space.
-4. Keep a hand near the run-stop or physical E-stop.
+Topics worth watching: `/diagnostics_agg`, `/diagnostics_toplevel_state`, `/mcu/status`, `/status`, `/feedback`, `/e_stop`.
 
-Abort options:
-
-```bash
-./scripts/cancel-nav
-./scripts/stop-navigation
-Ctrl-C in the navigate-slow terminal
-physical E-stop
-```
-
-Do not send long goals until short nearby goals are boring and repeatable.
-
-## Diagnose Shutdowns Or Motor Faults
-
-If the Ridgeback shuts down, disables, or faults when translating but can rotate in place, capture diagnostics before changing too many things. Common causes include battery voltage sag under load, motor controller faults, drivetrain overload, E-stop/enable state changes, or one side of the drivetrain drawing abnormal current.
-
-Rebuild after pulling changes to this Dockerfile:
-
-```bash
-cd ~/ridgeback_noetic_docker
-./scripts/build
-```
-
-Take a quick snapshot:
-
-```bash
-cd ~/ridgeback_noetic_docker
-./scripts/diagnose
-```
-
-Record a one-minute bag while reproducing the failure:
-
-```bash
-cd ~/ridgeback_noetic_docker
-./scripts/record-diagnostics 60
-```
-
-Then slowly reproduce the issue before the timer ends. The logs are written under:
-
-```bash
-~/ridgeback_noetic_docker/ws/logs/
-```
-
-For a live terminal view:
-
-```bash
-cd ~/ridgeback_noetic_docker
-./scripts/monitor-diagnostics
-```
-
-For a compact power-only view while testing:
-
-```bash
-cd ~/ridgeback_noetic_docker
-./scripts/watch-power
-```
-
-In a second terminal, drive very slowly:
-
-```bash
-cd ~/ridgeback_noetic_docker
-./scripts/teleop
-```
-
-Watch these topics especially:
-
-```bash
-rostopic echo /diagnostics_agg
-rostopic echo /diagnostics_toplevel_state
-rostopic echo /mcu/status
-rostopic echo /status
-rostopic echo /feedback
-rostopic echo /e_stop
-```
-
-Useful onboard checks over SSH:
+On the robot:
 
 ```bash
 ssh robot@192.168.131.1
-rosnode list
-rostopic echo /diagnostics_agg
-rostopic echo /status
-rostopic echo /feedback
 journalctl -b --no-pager -n 300
-ls -l ~/.ros/log/latest
-grep -RinE "error|warn|fault|shutdown|battery|voltage|current|estop|puma|motor" ~/.ros/log/latest
-dmesg -T | grep -Ei "can|usb|voltage|current|puma|motor|mcu"
+grep -RinE "error|fault|battery|voltage|current|estop|motor" ~/.ros/log/latest
+dmesg -T | grep -Ei "can|usb|voltage|motor|mcu"
 ```
 
-## RViz
+## Troubleshooting
+
+No topics? Check both sides.
+
+On this computer:
 
 ```bash
-cd ~/ridgeback_noetic_docker
-./scripts/rviz
-```
-
-## If Topics Do Not Appear
-
-Confirm these on the host:
-
-```bash
-ip addr show enp132s0
+ip addr          # is 192.168.131.100 assigned?
 ping 192.168.131.1
 ```
 
-Confirm these on the robot:
+On the robot:
 
 ```bash
-echo "$ROS_MASTER_URI"
-echo "$ROS_IP"
+echo "$ROS_MASTER_URI" "$ROS_IP"
 hostname -I
 rosnode list
 ```
 
-For ROS 1, both machines must be able to reach the addresses that nodes advertise. This setup assumes the robot is `192.168.131.1` and this workstation is `192.168.131.100`.
+## Notes
+
+- The container user and paths are hardcoded to `obadah` (`compose.yaml`, scripts). Change them if your username is different.
+- `ws/build`, `ws/devel`, `ws/maps`, and `ws/logs` are not tracked.

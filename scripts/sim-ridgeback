@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+config="${1:-base_sick}"
+
+xhost +local:root >/dev/null 2>&1 || true
+xhost +local:"$(whoami)" >/dev/null 2>&1 || true
+
+docker compose run --rm \
+  -e ROS_MASTER_URI=http://127.0.0.1:11311 \
+  -e ROS_IP=127.0.0.1 \
+  -e ROS_HOSTNAME= \
+  -e LIBGL_ALWAYS_SOFTWARE="${LIBGL_ALWAYS_SOFTWARE:-0}" \
+  noetic bash -lc '
+    set -euo pipefail
+    source /home/obadah/ws/devel/setup.bash 2>/dev/null || true
+
+    echo "Starting simulated Ridgeback in Gazebo."
+    echo "Config: $1"
+    echo "ROS master: ${ROS_MASTER_URI}"
+    echo
+
+    exec roslaunch ridgeback_gazebo ridgeback_world.launch config:="$1"
+  ' _ "$config"

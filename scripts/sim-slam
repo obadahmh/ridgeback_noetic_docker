@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+xhost +local:root >/dev/null 2>&1 || true
+xhost +local:"$(whoami)" >/dev/null 2>&1 || true
+
+docker compose run --rm \
+  -e ROS_MASTER_URI=http://127.0.0.1:11311 \
+  -e ROS_IP=127.0.0.1 \
+  -e ROS_HOSTNAME= \
+  -e LIBGL_ALWAYS_SOFTWARE="${LIBGL_ALWAYS_SOFTWARE:-0}" \
+  noetic bash -lc '
+    set -euo pipefail
+    source /home/obadah/ws/devel/setup.bash 2>/dev/null || true
+
+    if ! rospack find ridgeback_navigation >/dev/null 2>&1; then
+      echo "ridgeback_navigation was not found."
+      echo "Run ./scripts/build-ws first, then retry ./scripts/sim-slam."
+      exit 1
+    fi
+
+    echo "Starting gmapping against the simulated Ridgeback."
+    echo "Keep ./scripts/sim-ridgeback running in another terminal."
+    echo "Save a map with: ./scripts/sim-save-map sim_lab"
+    echo
+
+    roslaunch "$(rospack find ridgeback_navigation)/launch/include/gmapping.launch" scan_topic:=/front/scan &
+    gmapping_pid="$!"
+
+    cleanup() {
+      kill "$gmapping_pid" >/dev/null 2>&1 || true
+      wait "$gmapping_pid" >/dev/null 2>&1 || true
+    }
+    trap cleanup EXIT INT TERM
+
+    sleep 2
+    exec rviz -d "$(rospack find ridgeback_viz)/rviz/gmapping.rviz"
+  '

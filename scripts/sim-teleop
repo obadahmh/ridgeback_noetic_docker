@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+docker compose run --rm \
+  -e ROS_MASTER_URI=http://127.0.0.1:11311 \
+  -e ROS_IP=127.0.0.1 \
+  -e ROS_HOSTNAME= \
+  noetic bash -lc '
+    set -euo pipefail
+    exec rosrun teleop_twist_keyboard teleop_twist_keyboard.py cmd_vel:=/cmd_vel _speed:=0.15 _turn:=0.4
+  '

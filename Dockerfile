@@ -21,6 +21,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-noetic-move-base \
     ros-noetic-navigation \
     ros-noetic-ridgeback-desktop \
+    ros-noetic-ridgeback-simulator \
+    ros-noetic-gazebo-ros \
+    ros-noetic-gazebo-ros-control \
     ros-noetic-slam-gmapping \
     ros-noetic-teleop-twist-keyboard \
     ros-noetic-tf2-tools \

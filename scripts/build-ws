@@ -2,6 +2,12 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+
+# Only ridgeback_navigation is built from source. The other packages come from apt.
+for pkg in ridgeback_control ridgeback_description ridgeback_msgs; do
+  touch "ws/src/ridgeback/$pkg/CATKIN_IGNORE"
+done
+
 docker compose run --rm noetic bash -lc '
   set -euo pipefail
   cd /home/obadah/ws

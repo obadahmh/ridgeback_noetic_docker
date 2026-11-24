@@ -1,0 +1,4 @@
+[submodule "ws/src/ridgeback"]
+	path = ws/src/ridgeback
+	url = https://github.com/ridgeback/ridgeback.git
+	branch = melodic-devel
