@@ -1,0 +1,23 @@
+<launch>
+  <arg name="port" default="/dev/ttyUSB0" />
+  <arg name="baud" default="38400" />
+  <arg name="dry_run" default="true" />
+  <arg name="enable_motion" default="false" />
+  <arg name="function_id" default="0" />
+  <arg name="speed_pct" default="20" />
+  <arg name="max_motion_s" default="1.0" />
+
+  <node pkg="ridgeback_text_control"
+        type="ewellix_scu_rs232.py"
+        name="ewellix_scu_rs232"
+        output="screen"
+        args="--ros-node">
+    <param name="port" value="$(arg port)" />
+    <param name="baud" value="$(arg baud)" />
+    <param name="dry_run" value="$(arg dry_run)" />
+    <param name="enable_motion" value="$(arg enable_motion)" />
+    <param name="function_id" value="$(arg function_id)" />
+    <param name="speed_pct" value="$(arg speed_pct)" />
+    <param name="max_motion_s" value="$(arg max_motion_s)" />
+  </node>
+</launch>

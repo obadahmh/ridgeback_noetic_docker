@@ -1,0 +1,32 @@
+<launch>
+  <arg name="map_file" default="/home/obadah/ws/maps/lab_floor.yaml"/>
+  <arg name="scan_topic" default="/front/scan"/>
+  <arg name="initial_pose_x" default="0.0"/>
+  <arg name="initial_pose_y" default="0.0"/>
+  <arg name="initial_pose_a" default="0.0"/>
+
+  <node name="map_server" pkg="map_server" type="map_server" args="$(arg map_file)"/>
+
+  <include file="$(find ridgeback_navigation)/launch/include/amcl.launch">
+    <arg name="scan_topic" value="$(arg scan_topic)"/>
+    <arg name="initial_pose_x" value="$(arg initial_pose_x)"/>
+    <arg name="initial_pose_y" value="$(arg initial_pose_y)"/>
+    <arg name="initial_pose_a" value="$(arg initial_pose_a)"/>
+  </include>
+
+  <node pkg="move_base" type="move_base" respawn="false" name="move_base" output="screen">
+    <rosparam file="$(find ridgeback_text_control)/config/lab_costmap_common_params.yaml" command="load" ns="global_costmap"/>
+    <rosparam file="$(find ridgeback_text_control)/config/lab_costmap_common_params.yaml" command="load" ns="local_costmap"/>
+
+    <rosparam file="$(find ridgeback_text_control)/config/lab_local_costmap_params.yaml" command="load"/>
+    <rosparam file="$(find ridgeback_text_control)/config/lab_global_costmap_params.yaml" command="load"/>
+
+    <rosparam file="$(find ridgeback_text_control)/config/slow_dwa_planner_params.yaml" command="load"/>
+    <rosparam file="$(find ridgeback_text_control)/config/slow_move_base_params.yaml" command="load"/>
+
+    <param name="base_global_planner" type="string" value="navfn/NavfnROS"/>
+    <param name="base_local_planner" value="dwa_local_planner/DWAPlannerROS"/>
+
+    <remap from="odom" to="odometry/filtered"/>
+  </node>
+</launch>

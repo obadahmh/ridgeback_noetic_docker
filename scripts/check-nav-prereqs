@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+docker compose run --rm noetic bash -lc '
+  set -euo pipefail
+
+  echo "Checking core topics..."
+  for topic in /front/scan /tf /ridgeback_velocity_controller/odom /odometry/filtered /cmd_vel; do
+    printf "%-40s" "$topic"
+    rostopic type "$topic" 2>/dev/null || true
+  done
+
+  echo
+  echo "Checking one laser message..."
+  timeout 5 rostopic echo -n 1 /front/scan/header || true
+
+  echo
+  echo "Checking TF odom -> base_link..."
+  timeout 5 rosrun tf tf_echo odom base_link || true
+
+  echo
+  echo "Checking TF base_link -> front_laser..."
+  timeout 5 rosrun tf tf_echo base_link front_laser || true
+
+  echo
+  echo "Checking current map topic, if SLAM is already running..."
+  if rostopic list 2>/dev/null | grep -qx "/map"; then
+    timeout 5 rostopic echo -n 1 /map/info || true
+  else
+    echo "/map is not present yet. That is normal until ./scripts/mapping is running."
+  fi
+
+  echo
+  echo "Checking navigation packages..."
+  for pkg in gmapping map_server amcl move_base; do
+    printf "%-20s" "$pkg"
+    rospack find "$pkg" 2>/dev/null || true
+  done
+'

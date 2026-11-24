@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+name="${1:-ridgeback_map_$(date +%Y%m%d_%H%M%S)}"
+
+cd "$(dirname "$0")/.."
+
+docker compose run --rm noetic bash -lc "
+  set -euo pipefail
+  mkdir -p /home/obadah/ws/maps
+  rosrun map_server map_saver -f /home/obadah/ws/maps/${name}
+  echo
+  echo \"Saved map files:\"
+  ls -lh /home/obadah/ws/maps/${name}.pgm /home/obadah/ws/maps/${name}.yaml
+"

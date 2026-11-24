@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+docker compose run --rm noetic bash -lc '
+  set -euo pipefail
+
+  echo "Starting gmapping from /front/scan."
+  echo "Drive slowly and cover the environment with loops."
+  echo "Save the map while this is still running: ./scripts/save-map first_floor"
+  echo "After saving, press Ctrl-C here."
+  echo
+
+  rosrun gmapping slam_gmapping scan:=/front/scan \
+    _base_frame:=base_link \
+    _odom_frame:=odom \
+    _map_frame:=map \
+    _map_update_interval:=1.0 \
+    _xmin:=-20.0 \
+    _xmax:=20.0 \
+    _ymin:=-20.0 \
+    _ymax:=20.0 \
+    _delta:=0.05 \
+    _maxUrange:=8.0 \
+    _maxRange:=10.0 \
+    _linearUpdate:=0.25 \
+    _angularUpdate:=0.25 \
+    _temporalUpdate:=1.0 \
+    _particles:=40
+'

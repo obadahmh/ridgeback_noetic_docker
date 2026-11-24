@@ -1,0 +1,78 @@
+Panels:
+  - Class: rviz/Displays
+    Name: Displays
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Alpha: 0.5
+      Cell Size: 1
+      Class: rviz/Grid
+      Color: 160; 160; 164
+      Enabled: true
+      Line Style:
+        Line Width: 0.03
+        Value: Lines
+      Name: Grid
+      Plane: XY
+      Plane Cell Count: 20
+      Reference Frame: <Fixed Frame>
+      Value: true
+    - Alpha: 1
+      Class: rviz/LaserScan
+      Color: 255; 40; 40
+      Color Transformer: FlatColor
+      Decay Time: 5
+      Enabled: true
+      Name: Front Laser
+      Position Transformer: XYZ
+      Queue Size: 10
+      Selectable: true
+      Size (Pixels): 5
+      Size (m): 0.06
+      Style: Flat Squares
+      Topic: /front/scan
+      Unreliable: false
+      Use Fixed Frame: true
+      Value: true
+    - Class: rviz/TF
+      Enabled: true
+      Frame Timeout: 15
+      Frames:
+        All Enabled: true
+      Marker Scale: 0.8
+      Name: TF
+      Show Arrows: true
+      Show Axes: true
+      Show Names: true
+      Update Interval: 0
+      Value: true
+  Enabled: true
+  Global Options:
+    Background Color: 48; 48; 48
+    Default Light: true
+    Fixed Frame: front_laser
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz/Interact
+      Hide Inactive Objects: true
+    - Class: rviz/MoveCamera
+    - Class: rviz/Select
+    - Class: rviz/FocusCamera
+  Value: true
+  Views:
+    Current:
+      Class: rviz/TopDownOrtho
+      Name: Current View
+      Near Clip Distance: 0.01
+      Scale: 8
+      Target Frame: front_laser
+      Value: TopDownOrtho (rviz)
+      X: 0
+      Y: 0
+    Saved: ~
+Window Geometry:
+  Height: 900
+  Width: 1400
+  X: 100
+  Y: 80

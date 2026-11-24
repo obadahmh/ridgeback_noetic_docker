@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+docker compose run --rm noetic python3 -c '
+import rospy
+from ridgeback_msgs.msg import Status as McuStatus
+from puma_motor_msgs.msg import MultiStatus, MultiFeedback
+
+state = {"mcu": None, "drivers": None, "feedback": None}
+
+def set_mcu(msg):
+    state["mcu"] = msg
+
+def set_drivers(msg):
+    state["drivers"] = msg
+
+def set_feedback(msg):
+    state["feedback"] = msg
+
+rospy.init_node("ridgeback_power_watch", anonymous=True)
+rospy.Subscriber("/mcu/status", McuStatus, set_mcu, queue_size=1)
+rospy.Subscriber("/status", MultiStatus, set_drivers, queue_size=1)
+rospy.Subscriber("/feedback", MultiFeedback, set_feedback, queue_size=1)
+
+rate = rospy.Rate(2)
+print("time battery total_A driver_bus_V driver_faults motor_A")
+while not rospy.is_shutdown():
+    mcu = state["mcu"]
+    drivers = state["drivers"]
+    feedback = state["feedback"]
+
+    battery = "?"
+    total_current = "?"
+    if mcu:
+        battery = f"{mcu.measured_battery:.2f}"
+        total_current = f"{mcu.total_current:.2f}"
+
+    bus = "?"
+    faults = "?"
+    if drivers:
+        bus = ",".join(f"{d.device_name}:{d.bus_voltage:.2f}" for d in drivers.drivers)
+        faults = ",".join(f"{d.device_name}:{d.fault}" for d in drivers.drivers)
+
+    currents = "?"
+    if feedback:
+        currents = ",".join(f"{d.device_name}:{d.current:.2f}" for d in feedback.drivers_feedback)
+
+    print(f"{rospy.Time.now().to_sec():.1f} {battery} {total_current} {bus} {faults} {currents}", flush=True)
+    rate.sleep()
+'

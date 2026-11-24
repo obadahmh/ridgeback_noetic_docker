@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+docker compose run --rm noetic bash -lc '
+  set -euo pipefail
+
+  echo "Canceling active move_base goals and publishing stop commands."
+  rostopic pub -1 /move_base/cancel actionlib_msgs/GoalID "{}" >/dev/null || true
+  for _ in $(seq 1 10); do
+    rostopic pub -1 /cmd_vel geometry_msgs/Twist "{}" >/dev/null || true
+    sleep 0.05
+  done
+  echo "Navigation canceled. /cmd_vel set to zero."
+'

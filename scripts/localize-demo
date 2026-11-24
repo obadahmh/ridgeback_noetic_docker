@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+map_yaml="${1:-maps/lab_floor.yaml}"
+
+cd "$(dirname "$0")/.."
+
+docker compose run --rm noetic bash -lc '
+  set -euo pipefail
+  source /home/obadah/ws/devel/setup.bash
+
+  map_yaml="$1"
+
+  echo "Starting Clearpath AMCL demo."
+  echo "Map: $map_yaml"
+  echo "Note: this also starts move_base."
+  echo
+
+  roslaunch ridgeback_navigation amcl_demo.launch map_file:="$map_yaml" scan_topic:=/front/scan
+' _ "/home/obadah/ws/${map_yaml}"

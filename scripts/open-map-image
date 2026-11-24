@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+map_yaml="${1:-}"
+
+if [ -z "$map_yaml" ]; then
+  echo "Usage: ./scripts/open-map-image maps/name.yaml"
+  exit 2
+fi
+
+cd "$(dirname "$0")/.."
+
+host_yaml="$map_yaml"
+if [[ "$host_yaml" != /* ]]; then
+  host_yaml="$PWD/ws/$host_yaml"
+fi
+
+if [ ! -f "$host_yaml" ]; then
+  echo "Map yaml not found: $host_yaml"
+  exit 1
+fi
+
+image_path="$(awk -F': *' '$1 == "image" {print $2; exit}' "$host_yaml")"
+if [ -z "$image_path" ]; then
+  echo "No image entry found in $host_yaml"
+  exit 1
+fi
+
+if [[ "$image_path" == /home/obadah/ws/* ]]; then
+  host_image="$PWD/ws/${image_path#/home/obadah/ws/}"
+elif [[ "$image_path" == /* ]]; then
+  host_image="$image_path"
+else
+  host_image="$(dirname "$host_yaml")/$image_path"
+fi
+
+if [ ! -f "$host_image" ]; then
+  echo "Map image not found: $host_image"
+  exit 1
+fi
+
+preview_image="${host_image%.*}.png"
+
+python3 - "$host_image" "$preview_image" <<'PY'
+import struct
+import sys
+import zlib
+
+
+def next_token(data, index):
+    while index < len(data):
+        byte = data[index]
+        if byte == ord("#"):
+            while index < len(data) and data[index] not in b"\r\n":
+                index += 1
+        elif chr(byte).isspace():
+            index += 1
+        else:
+            break
+    start = index
+    while index < len(data) and not chr(data[index]).isspace():
+        index += 1
+    return data[start:index].decode("ascii"), index
+
+
+def png_chunk(kind, payload):
+    chunk = kind + payload
+    return (
+        struct.pack(">I", len(payload))
+        + chunk
+        + struct.pack(">I", zlib.crc32(chunk) & 0xFFFFFFFF)
+    )
+
+
+source, target = sys.argv[1], sys.argv[2]
+data = open(source, "rb").read()
+
+magic, index = next_token(data, 0)
+if magic != "P5":
+    raise SystemExit(f"Only binary PGM P5 is supported, got {magic}")
+
+width, index = next_token(data, index)
+height, index = next_token(data, index)
+max_value, index = next_token(data, index)
+width = int(width)
+height = int(height)
+max_value = int(max_value)
+if max_value != 255:
+    raise SystemExit(f"Only 8-bit PGM is supported, got max value {max_value}")
+
+while index < len(data) and chr(data[index]).isspace():
+    index += 1
+
+pixels = data[index : index + width * height]
+if len(pixels) != width * height:
+    raise SystemExit("PGM pixel data is shorter than expected")
+
+scanlines = bytearray()
+for row in range(height):
+    scanlines.append(0)
+    start = row * width
+    scanlines.extend(pixels[start : start + width])
+
+png = bytearray()
+png.extend(b"\x89PNG\r\n\x1a\n")
+png.extend(
+    png_chunk(
+        b"IHDR",
+        struct.pack(">IIBBBBB", width, height, 8, 0, 0, 0, 0),
+    )
+)
+png.extend(png_chunk(b"IDAT", zlib.compress(bytes(scanlines), 9)))
+png.extend(png_chunk(b"IEND", b""))
+
+with open(target, "wb") as handle:
+    handle.write(png)
+PY
+
+echo "Opening $preview_image"
+if command -v eog >/dev/null 2>&1; then
+  eog "$preview_image" >/dev/null 2>&1 &
+else
+  xdg-open "$preview_image" >/dev/null 2>&1 &
+fi

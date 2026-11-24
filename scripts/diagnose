@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+host_log_root="$(pwd)/ws/logs"
+
+docker compose run --rm noetic bash -lc '
+  set -euo pipefail
+
+  stamp="$(date +%Y%m%d_%H%M%S)"
+  log_dir="$HOME/ws/logs/diagnose_$stamp"
+  mkdir -p "$log_dir"
+
+  echo "Writing diagnostic snapshot to $log_dir"
+
+  {
+    echo "===== host/container ====="
+    date -Is
+    hostname
+    echo "ROS_MASTER_URI=$ROS_MASTER_URI"
+    echo "ROS_IP=$ROS_IP"
+    echo
+
+    echo "===== rostopic list -v ====="
+    rostopic list -v || true
+    echo
+
+    echo "===== rosnode list ====="
+    rosnode list || true
+    echo
+
+    echo "===== key topic types ====="
+    for topic in \
+      /diagnostics \
+      /diagnostics_agg \
+      /diagnostics_toplevel_state \
+      /mcu/status \
+      /status \
+      /feedback \
+      /e_stop \
+      /cmd_vel \
+      /ridgeback_velocity_controller/cmd_vel \
+      /ridgeback_velocity_controller/odom \
+      /odometry/filtered
+    do
+      printf "%-45s" "$topic"
+      rostopic type "$topic" 2>/dev/null || true
+    done
+    echo
+  } | tee "$log_dir/summary.txt"
+
+  for topic in \
+    /diagnostics_toplevel_state \
+    /diagnostics_agg \
+    /diagnostics \
+    /mcu/status \
+    /status \
+    /feedback \
+    /e_stop \
+    /ridgeback_velocity_controller/odom \
+    /odometry/filtered
+  do
+    safe_name="${topic#/}"
+    safe_name="${safe_name//\//_}"
+    echo "Capturing $topic"
+    timeout 6 rostopic echo -n 3 "$topic" > "$log_dir/${safe_name}.txt" 2>&1 || true
+  done
+
+  echo
+  echo "Done. Host path:"
+  echo "'"$host_log_root"'/diagnose_$stamp"
+'

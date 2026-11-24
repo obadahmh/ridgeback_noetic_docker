@@ -1,0 +1,26 @@
+services:
+  noetic:
+    build:
+      context: .
+      args:
+        USERNAME: obadah
+        USER_UID: 1000
+        USER_GID: 1000
+    image: ridgeback-noetic:local
+    network_mode: host
+    ipc: host
+    privileged: true
+    extra_hosts:
+      - ${ROBOT_HOSTNAME:-cpr-r100-0601}:${ROBOT_IP:-192.168.131.1}
+    environment:
+      ROS_MASTER_URI: http://${ROBOT_IP:-192.168.131.1}:11311
+      ROS_IP: ${OFFBOARD_IP:-192.168.131.100}
+      ROS_HOSTNAME: ""
+      DISPLAY: ${DISPLAY:-:0}
+      QT_X11_NO_MITSHM: "1"
+    volumes:
+      - ./ws:/home/obadah/ws
+      - ./config:/home/obadah/config:ro
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    stdin_open: true
+    tty: true

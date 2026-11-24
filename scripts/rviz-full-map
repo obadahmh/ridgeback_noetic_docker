@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+xhost +local:root >/dev/null 2>&1 || true
+xhost +local:"$(whoami)" >/dev/null 2>&1 || true
+docker compose run --rm noetic bash -lc '
+  set -euo pipefail
+
+  python3 /home/obadah/ws/src/ridgeback_text_control/scripts/map_visualizer.py &
+  map_visualizer_pid="$!"
+  cleanup() {
+    kill "$map_visualizer_pid" >/dev/null 2>&1 || true
+    wait "$map_visualizer_pid" >/dev/null 2>&1 || true
+  }
+  trap cleanup EXIT INT TERM
+
+  rviz -d /home/obadah/config/mapping.rviz
+'

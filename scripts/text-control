@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+docker compose run --rm noetic bash -lc \
+  'python3 /home/obadah/ws/src/ridgeback_text_control/scripts/text_command_executor.py "$@"' \
+  _ "$@"

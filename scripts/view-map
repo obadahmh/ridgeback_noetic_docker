@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+map_yaml="${1:-}"
+
+if [ -z "$map_yaml" ]; then
+  echo "Usage: ./scripts/view-map maps/name.yaml"
+  exit 2
+fi
+
+cd "$(dirname "$0")/.."
+
+xhost +local:root >/dev/null 2>&1 || true
+xhost +local:"$(whoami)" >/dev/null 2>&1 || true
+
+docker compose run --rm noetic bash -lc '
+  set -euo pipefail
+  source /home/obadah/ws/devel/setup.bash
+  map_yaml="$1"
+
+  for node in /slam_gmapping /map_server; do
+    if rosnode list 2>/dev/null | grep -qx "$node"; then
+      echo "Stopping existing $node so the saved map is the only /map publisher."
+      rosnode kill "$node" || true
+      sleep 0.5
+    fi
+  done
+
+  rosrun map_server map_server "$map_yaml" &
+  map_server_pid="$!"
+  trap "kill $map_server_pid >/dev/null 2>&1 || true" EXIT
+
+  sleep 1
+  echo "Loaded saved map from $map_yaml"
+  echo "Checking one /map/info message:"
+  timeout 5 rostopic echo -n 1 /map/info || true
+  rviz -d /home/obadah/config/saved_map.rviz
+' _ "/home/obadah/ws/${map_yaml}"

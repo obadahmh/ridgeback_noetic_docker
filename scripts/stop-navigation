@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+docker compose run --rm noetic bash -lc '
+  set -euo pipefail
+  for node in /slam_gmapping /move_base /amcl /map_server /ridgeback_map_visualizer; do
+    if rosnode list 2>/dev/null | grep -qx "$node"; then
+      echo "Stopping $node"
+      rosnode kill "$node" || true
+    fi
+  done
+  for _ in $(seq 1 5); do
+    rostopic pub -1 /cmd_vel geometry_msgs/Twist "{}" >/dev/null || true
+    sleep 0.05
+  done
+'

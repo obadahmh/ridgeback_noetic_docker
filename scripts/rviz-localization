@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+xhost +local:root >/dev/null 2>&1 || true
+xhost +local:"$(whoami)" >/dev/null 2>&1 || true
+docker compose run --rm noetic bash -lc '
+  set -euo pipefail
+  source /home/obadah/ws/devel/setup.bash
+  roslaunch ridgeback_viz view_robot.launch config:=localization
+'

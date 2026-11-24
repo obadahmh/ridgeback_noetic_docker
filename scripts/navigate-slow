@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+map_yaml="${1:-maps/lab_floor.yaml}"
+
+cd "$(dirname "$0")/.."
+
+docker compose run --rm noetic bash -lc '
+  set -euo pipefail
+  source /home/obadah/ws/devel/setup.bash
+
+  map_yaml="$1"
+
+  echo "Starting slow navigation: map_server + AMCL + move_base."
+  echo "Map: $map_yaml"
+  echo "Use RViz 2D Pose Estimate first, then 2D Nav Goal for a short nearby goal."
+  echo "Abort with ./scripts/cancel-nav or the physical E-stop."
+  echo
+
+  roslaunch ridgeback_text_control slow_navigation.launch map_file:="$map_yaml" scan_topic:=/front/scan
+' _ "/home/obadah/ws/${map_yaml}"

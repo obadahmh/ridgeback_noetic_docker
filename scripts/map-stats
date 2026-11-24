@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+docker compose run --rm noetic python3 - "$@" <<'PY'
+import argparse
+import collections
+import time
+
+import rospy
+from nav_msgs.msg import OccupancyGrid
+
+
+def summarize(topic, msg):
+    counts = collections.Counter(msg.data)
+    total = len(msg.data)
+    known = total - counts.get(-1, 0)
+    normal = {-1, 0, 100}
+    unusual = {value: count for value, count in counts.items() if value not in normal}
+
+    print(f"topic: {topic}")
+    print(f"resolution: {msg.info.resolution:.3f} m/cell")
+    print(f"size: {msg.info.width} x {msg.info.height} cells")
+    print(
+        "origin: "
+        f"x={msg.info.origin.position.x:.2f}, "
+        f"y={msg.info.origin.position.y:.2f}"
+    )
+    print(f"cells: total={total}, known={known}, unknown={counts.get(-1, 0)}")
+    print(f"normal counts: free(0)={counts.get(0, 0)}, occupied(100)={counts.get(100, 0)}")
+    if unusual:
+        print("unusual values:")
+        for value, count in sorted(unusual.items()):
+            print(f"  {value}: {count}")
+    else:
+        print("unusual values: none")
+    print()
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Print compact stats for the /map occupancy grid.")
+    parser.add_argument("--topic", default="/map", help="OccupancyGrid topic to inspect.")
+    parser.add_argument("--watch", action="store_true", help="Print stats continuously.")
+    parser.add_argument("--period", type=float, default=2.0, help="Seconds between watch updates.")
+    args = parser.parse_args()
+
+    rospy.init_node("ridgeback_map_stats", anonymous=True)
+
+    if not args.watch:
+        msg = rospy.wait_for_message(args.topic, OccupancyGrid, timeout=10.0)
+        summarize(args.topic, msg)
+        return
+
+    latest = {"msg": None}
+
+    def callback(msg):
+        latest["msg"] = msg
+
+    rospy.Subscriber(args.topic, OccupancyGrid, callback, queue_size=1)
+    while not rospy.is_shutdown():
+        if latest["msg"] is not None:
+            summarize(args.topic, latest["msg"])
+        time.sleep(args.period)
+
+
+if __name__ == "__main__":
+    main()
+PY

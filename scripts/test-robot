@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+docker compose run --rm noetic bash -lc '
+  echo "ROS_MASTER_URI=$ROS_MASTER_URI"
+  echo "ROS_IP=$ROS_IP"
+  echo
+  echo "Checking master..."
+  rostopic list
+  echo
+  echo "Checking Ridgeback status topics if present..."
+  rostopic list | grep -E "ridgeback|cmd_vel|odom|tf|diagnostics" || true
+'

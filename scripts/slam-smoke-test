@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+docker compose run --rm noetic bash -lc '
+  set -euo pipefail
+
+  if rosnode list 2>/dev/null | grep -qx "/slam_gmapping"; then
+    echo "/slam_gmapping is already running."
+    echo "Checking current mapping outputs..."
+    timeout 8 rostopic echo -n 1 /map/info
+    timeout 8 rostopic echo -n 1 /map_visual/info || echo "/map_visual is not publishing. Restart ./scripts/slam to start the visualizer."
+    timeout 8 rostopic echo -n 1 /map_obstacles/header || echo "/map_obstacles is not publishing. Restart ./scripts/slam to start the visualizer."
+    exit 0
+  fi
+
+  echo "Starting temporary gmapping. This does not publish velocity commands."
+  rosrun gmapping slam_gmapping scan:=/front/scan \
+    _base_frame:=base_link \
+    _odom_frame:=odom \
+    _map_frame:=map \
+    _map_update_interval:=1.0 \
+    _xmin:=-20.0 \
+    _xmax:=20.0 \
+    _ymin:=-20.0 \
+    _ymax:=20.0 \
+    _delta:=0.05 \
+    _maxUrange:=8.0 \
+    _maxRange:=10.0 \
+    _linearUpdate:=0.25 \
+    _angularUpdate:=0.25 \
+    _temporalUpdate:=1.0 \
+    _particles:=40 &
+
+  gmapping_pid="$!"
+
+  python3 /home/obadah/ws/src/ridgeback_text_control/scripts/map_visualizer.py &
+  map_visualizer_pid="$!"
+
+  cleanup() {
+    kill "$map_visualizer_pid" >/dev/null 2>&1 || true
+    kill "$gmapping_pid" >/dev/null 2>&1 || true
+    wait "$map_visualizer_pid" >/dev/null 2>&1 || true
+    wait "$gmapping_pid" >/dev/null 2>&1 || true
+  }
+  trap cleanup EXIT INT TERM
+
+  sleep 6
+
+  echo
+  echo "Checking /map/info..."
+  timeout 8 rostopic echo -n 1 /map/info
+
+  echo
+  echo "Checking /map_visual/info..."
+  timeout 8 rostopic echo -n 1 /map_visual/info
+
+  echo
+  echo "Checking /map_obstacles marker..."
+  timeout 8 rostopic echo -n 1 /map_obstacles/header
+
+  echo
+  echo "SLAM smoke test passed: gmapping published /map and RViz can use /map_visual plus /map_obstacles."
+'

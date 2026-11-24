@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+docker compose run --rm noetic bash -lc '
+  set -euo pipefail
+  source /home/obadah/ws/devel/setup.bash
+  echo "Starting Clearpath ridgeback_navigation gmapping_demo.launch."
+  echo "Note: this also starts move_base, matching the Clearpath tutorial."
+  echo
+  roslaunch ridgeback_navigation gmapping_demo.launch scan_topic:=/front/scan
+'

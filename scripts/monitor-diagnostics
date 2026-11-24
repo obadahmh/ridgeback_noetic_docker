@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+docker compose run --rm noetic bash -lc '
+  set -euo pipefail
+
+  echo "Showing top-level diagnostics. Press Ctrl-C to stop."
+  echo "In another terminal, run ./scripts/teleop and reproduce the issue slowly."
+  echo
+
+  while true; do
+    clear
+    date -Is
+    echo
+    echo "===== /diagnostics_toplevel_state ====="
+    timeout 3 rostopic echo -n 1 /diagnostics_toplevel_state || true
+    echo
+    echo "===== /mcu/status ====="
+    timeout 3 rostopic echo -n 1 /mcu/status || true
+    echo
+    echo "===== /status ====="
+    timeout 3 rostopic echo -n 1 /status || true
+    sleep 1
+  done
+'
